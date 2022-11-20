@@ -60,7 +60,7 @@ func (r *Reader) NumPage() int {
 }
 
 // GetPlainText returns all the text in the PDF file
-func (r *Reader) GetPlainText() (reader io.Reader, err error) {
+func (r *Reader) GetPlainText(space bool) (reader io.Reader, err error) {
 	pages := r.NumPage()
 	var buf bytes.Buffer
 	fonts := make(map[string]*Font)
@@ -72,7 +72,7 @@ func (r *Reader) GetPlainText() (reader io.Reader, err error) {
 				fonts[name] = &f
 			}
 		}
-		text, err := p.GetPlainText(fonts)
+		text, err := p.GetPlainText(space, fonts)
 		if err != nil {
 			return &bytes.Buffer{}, err
 		}
@@ -485,7 +485,7 @@ type gstate struct {
 
 // GetPlainText returns the page's all text without format.
 // fonts can be passed in (to improve parsing performance) or left nil
-func (p Page) GetPlainText(fonts map[string]*Font) (result string, err error) {
+func (p Page) GetPlainText(space bool, fonts map[string]*Font) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = ""
@@ -506,10 +506,16 @@ func (p Page) GetPlainText(fonts map[string]*Font) (result string, err error) {
 
 	var textBuilder bytes.Buffer
 	showText := func(s string) {
-		for _, ch := range enc.Decode(s) {
-			_, err := textBuilder.WriteRune(ch)
-			if err != nil {
-				panic(err)
+		if s == " " {
+			textBuilder.WriteRune(' ')
+		} else if s == "\n" {
+			textBuilder.WriteRune('\n')
+		} else {
+			for _, ch := range enc.Decode(s) {
+				_, err := textBuilder.WriteRune(ch)
+				if err != nil {
+					panic(err)
+				}
 			}
 		}
 	}
@@ -524,6 +530,12 @@ func (p Page) GetPlainText(fonts map[string]*Font) (result string, err error) {
 		switch op {
 		default:
 			return
+		case "ET": // end text put a space
+			if space {
+				showText(" ")
+			} else {
+				return
+			}
 		case "T*": // move to start of next line
 			showText("\n")
 		case "Tf": // set text font and size
